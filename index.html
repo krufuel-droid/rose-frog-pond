@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#57ab5a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Frog Pond">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Frog Pond — for Rose</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin:0; font-family:"Comic Sans MS","Chalkboard SE",system-ui,sans-serif; background:#e8fbe8; color:#173d1f; text-align:center; }
+  header { background:linear-gradient(135deg,#a7f3b8,#bfeee8); padding:12px 10px 10px; box-shadow:0 2px 8px rgba(0,0,0,.10); }
+  header h1 { margin:0; font-size:1.5rem; }
+  #counter { margin:4px 0 0; font-size:1.1rem; font-weight:bold; color:#0b7a43; }
+  main { max-width:560px; margin:0 auto; padding:14px 12px 30px; }
+  #buddy { font-size:3.6rem; line-height:1; cursor:pointer; display:inline-block; animation:bob 2.4s ease-in-out infinite; background:none; border:none; }
+  @keyframes bob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-7px)} }
+  #prompt { font-size:1.3rem; font-weight:bold; margin:6px 0 2px; min-height:1.6em; }
+  #pond { position:relative; background:radial-gradient(ellipse at 50% 40%, #8fd8ff 0%, #4fb3e8 55%, #2e8fd0 100%); border:6px solid #57ab5a; border-radius:48% / 38%; min-height:340px; margin:14px auto 6px; max-width:480px; cursor:pointer; overflow:hidden; box-shadow:inset 0 0 40px rgba(255,255,255,.35), 0 6px 16px rgba(0,0,0,.15); transition:box-shadow .3s; }
+  #pond.glow { box-shadow:0 0 0 6px #ffe066, 0 0 34px 10px rgba(255,214,64,.75); }
+  .pad { position:absolute; font-size:2rem; opacity:.85; pointer-events:none; }
+  .frog { position:absolute; transform:translate(-50%,-50%); background:none; border:none; cursor:pointer; padding:0; line-height:1; text-align:center; }
+  .frog .face { font-size:3.2rem; display:block; }
+  .frog .num { display:block; margin-top:1px; font-size:1.05rem; font-weight:bold; color:#fff; background:#0b7a43; border-radius:999px; padding:1px 9px; box-shadow:0 2px 5px rgba(0,0,0,.25); }
+  .frog.hop .face { animation:hop .55s ease; }
+  @keyframes hop { 30%{transform:translateY(-22px) scale(1.12);} 60%{transform:translateY(2px) scale(.96);} }
+  .frog.wiggle .face { animation:wiggle .45s ease infinite alternate; }
+  @keyframes wiggle { from{transform:rotate(-5deg)} to{transform:rotate(5deg)} }
+  .splash { position:absolute; transform:translate(-50%,-50%); font-size:2rem; pointer-events:none; animation:splashUp .6s ease forwards; }
+  @keyframes splashUp { from{opacity:1; transform:translate(-50%,-50%) scale(.7);} to{opacity:0; transform:translate(-50%,-110%) scale(1.3);} }
+  .controls { margin-top:20px; display:flex; flex-wrap:wrap; gap:10px; justify-content:center; }
+  .bigbtn { font-size:1.25rem; font-weight:bold; padding:16px 24px; border:none; border-radius:999px; font-family:inherit; cursor:pointer; box-shadow:0 3px 8px rgba(0,0,0,.18); }
+  .bigbtn.count { background:#3d9bff; color:#fff; font-size:1.4rem; padding:18px 30px; }
+  .bigbtn.again { background:#ffb84d; color:#5a3400; }
+  .bigbtn.again.highlight { box-shadow:0 0 0 6px #ffe066, 0 3px 8px rgba(0,0,0,.18); font-size:1.45rem; padding:18px 34px; }
+  .bigbtn:disabled { opacity:.45; }
+  .confetti { position:fixed; top:-16px; width:13px; height:13px; border-radius:3px; z-index:50; pointer-events:none; animation:fall linear forwards; }
+  @keyframes fall { to { transform:translateY(105vh) rotate(720deg); opacity:.85; } }
+  footer { padding:8px 12px 30px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🐸 Frog Pond 🐸</h1>
+  <p id="counter">Frogs: 0</p>
+</header>
+<main>
+  <button id="buddy" title="Tap me!">🐸</button>
+  <div id="prompt">Tap the pond!</div>
+  <div id="pond" aria-label="Pond — tap to add a frog"></div>
+  <div class="controls">
+    <button class="bigbtn count" id="countBtn" disabled>🔊 Count with me!</button>
+    <button class="bigbtn again" id="againBtn">🔄 Again!</button>
+  </div>
+</main>
+<footer>
+<p><button id="installBtn" onclick="installApp()" style="display:none;font-size:1rem;padding:10px 18px;border:none;border-radius:999px;background:#57ab5a;color:#fff;font-family:inherit;cursor:pointer">📱 Install this app</button></p>
+<script>
+let deferredInstall = null;
+window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); deferredInstall = e; const b = document.getElementById("installBtn"); if (b) b.style.display = "inline-block"; });
+function installApp(){ if (deferredInstall) { deferredInstall.prompt(); deferredInstall.userChoice.then(() => { deferredInstall = null; const b = document.getElementById("installBtn"); if (b) b.style.display = "none"; }); } }
+if ("serviceWorker" in navigator) {
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hadController) return;
+    if (sessionStorage.getItem("fpSwReloaded")) return;
+    sessionStorage.setItem("fpSwReloaded", "1");
+    location.reload();
+  });
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
+</script>
+</footer>
+<script>
+"use strict";
+// Frog Pond — Count & Croak. One screen, one mechanic: tap the pond, a frog
+// hops in and says its number. Tap a frog, it says its number again. At 10,
+// everybody counts together. No wrong taps anywhere. Audio is pre-recorded
+// Aria MP3s only — never SpeechSynthesis. Silent until the first tap.
+const SPOTS = [
+  [22,30],[50,22],[78,30],[35,48],[65,48],[22,68],[50,62],[78,68],[38,84],[64,84]
+];
+const PADS = [[14,52],[86,50],[50,40],[84,86],[14,14]];
+const pond = document.getElementById("pond");
+const counterEl = document.getElementById("counter");
+const promptEl = document.getElementById("prompt");
+const countBtn = document.getElementById("countBtn");
+const againBtn = document.getElementById("againBtn");
+let frogs = 0;
+let celebrating = false;
+let player = null;
+
+PADS.forEach(([x,y]) => {
+  const s = document.createElement("span");
+  s.className = "pad"; s.textContent = "🪷";
+  s.style.left = x + "%"; s.style.top = y + "%";
+  pond.appendChild(s);
+});
+
+function play(file, onend) {
+  if (player) { try { player.pause(); } catch(e) {} player = null; }
+  const a = new Audio("audio/" + file);
+  player = a;
+  if (onend) a.addEventListener("ended", onend, { once:true });
+  a.play().catch(() => {});
+  return a;
+}
+function confetti() {
+  const colors = ["#2ec4b6","#ffe066","#ff8fb8","#8fc9ff","#57ab5a","#ffb84d"];
+  for (let i = 0; i < 44; i++) {
+    const d = document.createElement("div");
+    d.className = "confetti";
+    d.style.left = Math.random() * 100 + "vw";
+    d.style.background = colors[i % colors.length];
+    d.style.animationDuration = (1.4 + Math.random() * 1.6) + "s";
+    document.body.appendChild(d);
+    setTimeout(() => d.remove(), 3400);
+  }
+}
+function hop(el) {
+  el.classList.remove("hop"); void el.offsetWidth; el.classList.add("hop");
+}
+function splash(x, y) {
+  const s = document.createElement("span");
+  s.className = "splash"; s.textContent = "💦";
+  s.style.left = x + "%"; s.style.top = y + "%";
+  pond.appendChild(s);
+  setTimeout(() => s.remove(), 650);
+}
+function addFrog() {
+  if (celebrating || frogs >= 10) return;
+  frogs += 1;
+  const [x, y] = SPOTS[frogs - 1];
+  splash(x, y);
+  const b = document.createElement("button");
+  b.className = "frog";
+  b.style.left = x + "%"; b.style.top = y + "%";
+  b.innerHTML = '<span class="face">🐸</span><span class="num">' + frogs + "</span>";
+  b.dataset.n = String(frogs);
+  b.addEventListener("click", ev => {
+    ev.stopPropagation();
+    if (celebrating) return;
+    hop(b);
+    play("num_" + b.dataset.n + ".mp3");
+  });
+  pond.appendChild(b);
+  hop(b);
+  counterEl.textContent = "Frogs: " + frogs;
+  countBtn.disabled = false;
+  if (frogs === 10) {
+    play("num_10.mp3", () => setTimeout(celebrate, 250));
+  } else {
+    play("num_" + frogs + ".mp3");
+    promptEl.textContent = frogs >= 7 ? "Almost there!" : "Tap the pond!";
+  }
+}
+function celebrate() {
+  if (celebrating) return;
+  celebrating = true;
+  promptEl.textContent = "You did it! Ten frogs!";
+  pond.classList.add("glow");
+  document.querySelectorAll(".frog").forEach(f => f.classList.add("wiggle"));
+  confetti();
+  againBtn.classList.add("highlight");
+  play("count_together.mp3", () => play("praise_did_it.mp3", () => {
+    play("ribbit.mp3");
+  }));
+}
+function reset() {
+  frogs = 0; celebrating = false;
+  if (player) { try { player.pause(); } catch(e) {} player = null; }
+  document.querySelectorAll(".frog").forEach(f => f.remove());
+  pond.classList.remove("glow");
+  againBtn.classList.remove("highlight");
+  counterEl.textContent = "Frogs: 0";
+  promptEl.textContent = "Tap the pond!";
+  countBtn.disabled = true;
+}
+pond.addEventListener("click", () => {
+  if (frogs >= 10) { if (!celebrating) celebrate(); return; }
+  addFrog();
+});
+countBtn.addEventListener("click", () => {
+  if (!frogs || celebrating) return;
+  play("count_together.mp3");
+});
+againBtn.addEventListener("click", reset);
+document.getElementById("buddy").addEventListener("click", () => play("prompt_tap.mp3"));
+</script>
+</body>
+</html>
