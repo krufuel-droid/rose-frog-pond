@@ -48,6 +48,8 @@
   .bigbtn.again { background:#ffb84d; color:#5a3400; }
   .bigbtn.newprob { background:#57ab5a; color:#fff; font-size:1.4rem; padding:18px 30px; }
   .bigbtn.showme { background:#ff8c42; color:#fff; font-size:1.4rem; padding:18px 30px; }
+  .bigbtn.try { background:#e75480; color:#fff; font-size:1.4rem; padding:18px 30px; }
+  .bigbtn.try.listening { animation:bob 0.9s ease-in-out infinite; box-shadow:0 0 0 6px #ffd3e2, 0 3px 8px rgba(0,0,0,.18); }
   .bigbtn.again.highlight, .bigbtn.newprob.highlight { box-shadow:0 0 0 6px #ffe066, 0 3px 8px rgba(0,0,0,.18); }
   .bigbtn:disabled { opacity:.45; }
   .confetti { position:fixed; top:-16px; width:13px; height:13px; border-radius:3px; z-index:50; pointer-events:none; animation:fall linear forwards; }
@@ -75,6 +77,7 @@
   </div>
   <div class="controls" id="mathUI" hidden>
     <button class="bigbtn newprob" id="newProbBtn">▶️ New problem!</button>
+    <button class="bigbtn try" id="tryBtn" disabled>🎤 Try it!</button>
     <button class="bigbtn showme" id="showMeBtn" disabled>👀 Show me!</button>
   </div>
 </main>
@@ -118,6 +121,7 @@ const countBtn = document.getElementById("countBtn");
 const againBtn = document.getElementById("againBtn");
 const newProbBtn = document.getElementById("newProbBtn");
 const showMeBtn = document.getElementById("showMeBtn");
+const tryBtn = document.getElementById("tryBtn");
 const countUI = document.getElementById("countUI");
 const mathUI = document.getElementById("mathUI");
 let mode = "count";
@@ -299,12 +303,14 @@ function removeStaggered(count, token, done) {
 }
 function newProblem() {
   stopAudio();
+  stopListening();
   busy = true;
   celebrating = false;
   clearPond();
   resetTapCounts();
   problemEl.textContent = "";
   showMeBtn.disabled = true;
+  tryBtn.disabled = true;
   newProbBtn.classList.remove("highlight");
   newProbBtn.disabled = true;
   promptEl.textContent = "Listen…";
@@ -338,6 +344,7 @@ function newProblem() {
           busy = false;
           newProbBtn.disabled = false;
           showMeBtn.disabled = false;
+          tryBtn.disabled = false;
           play(add ? "how_many_now.mp3" : "how_many_left.mp3");
         }, 200);
       };
@@ -353,11 +360,28 @@ function newProblem() {
   spawnStaggered(a, false, token, () => { spawned = true; act2(); });
   playSeq(["num_" + a + ".mp3", "in_pond.mp3"], token, () => { spoken = true; act2(); });
 }
+// Shared problem-completion: fill in the answer, celebrate, offer Next.
+function finishReveal(promptText, chain, confettiN) {
+  problemEl.textContent = math.a + " " + math.op + " " + math.b + " = " + math.answer;
+  promptEl.textContent = promptText;
+  math.phase = "revealed";
+  busy = false;
+  showMeBtn.disabled = true;
+  tryBtn.disabled = true;
+  newProbBtn.disabled = false;
+  newProbBtn.innerHTML = "▶️ Next problem!";
+  newProbBtn.classList.add("highlight");
+  confetti(confettiN);
+  const token = seqToken;
+  playSeq(chain, token, null);
+}
 function showMe() {
   if (!math || math.phase !== "asking" || busy) return;
   stopAudio();
+  stopListening();
   busy = true;
   showMeBtn.disabled = true;
+  tryBtn.disabled = true;
   newProbBtn.disabled = true;
   resetTapCounts();
   promptEl.textContent = "Let's count together!";
@@ -368,15 +392,7 @@ function showMe() {
     const step = () => {
       if (token !== seqToken) return;
       if (i >= targets.length) {
-        problemEl.textContent = math.a + " " + math.op + " " + math.b + " = " + math.answer;
-        promptEl.textContent = "Great counting!";
-        math.phase = "revealed";
-        busy = false;
-        newProbBtn.disabled = false;
-        newProbBtn.innerHTML = "▶️ Next problem!";
-        newProbBtn.classList.add("highlight");
-        confetti(30);
-        playSeq(["num_" + math.answer + ".mp3", "great_counting.mp3"], token, null);
+        finishReveal("Great counting!", ["num_" + math.answer + ".mp3", "great_counting.mp3"], 30);
         return;
       }
       const f = targets[i];
@@ -390,6 +406,7 @@ function showMe() {
 }
 function resetMath() {
   stopAudio();
+  stopListening();
   busy = false;
   math = null;
   clearPond();
@@ -397,14 +414,106 @@ function resetMath() {
   problemEl.textContent = "";
   promptEl.textContent = "Tap New problem!";
   showMeBtn.disabled = true;
+  tryBtn.disabled = true;
   newProbBtn.disabled = false;
   newProbBtn.innerHTML = "▶️ New problem!";
   newProbBtn.classList.remove("highlight");
 }
 
+// ---------------- TRY IT! voice answers (v3, Amanda's design) ----------------
+// Tap Try it, Rose says her answer out loud, the app listens (browser speech
+// recognition — Chrome/Android). Right -> Good job + confetti. Wrong -> it
+// goes straight into Show Me and counts with her; she is never told "wrong"
+// and there is no buzzer. Nothing is recorded or stored by the app.
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+if (!SR) tryBtn.style.display = "none";
+const SPOKEN_NUMBERS = { one:1, won:1, two:2, to:2, too:2, three:3, four:4, for:4,
+  five:5, six:6, sicks:6, seven:7, eight:8, ate:8, nine:9, ten:10, tin:10 };
+function parseSpokenNumber(text) {
+  if (!text) return null;
+  const toks = String(text).toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/);
+  let found = null;
+  for (const t of toks) {
+    if (/^(10|[1-9])$/.test(t)) found = parseInt(t, 10);
+    else if (Object.prototype.hasOwnProperty.call(SPOKEN_NUMBERS, t)) found = SPOKEN_NUMBERS[t];
+  }
+  return found; // last number wins — a self-correction ("four... five!") counts
+}
+function numberFromResults(results) {
+  for (let r = 0; r < results.length; r++) {
+    for (let a = 0; a < results[r].length; a++) {
+      const v = parseSpokenNumber(results[r][a].transcript);
+      if (v !== null) return v;
+    }
+  }
+  return null;
+}
+let rec = null, listening = false;
+function stopListening() {
+  if (rec) { try { rec.onend = null; rec.abort(); } catch(e) {} rec = null; }
+  listening = false;
+  tryBtn.classList.remove("listening");
+  tryBtn.innerHTML = "🎤 Try it!";
+  if (math && math.phase === "asking" && !busy) tryBtn.disabled = false;
+}
+function didntHear() {
+  if (!math || math.phase !== "asking") return;
+  promptEl.textContent = "I didn't hear a number — tap Try it, or Show me!";
+  play(math.op === "+" ? "how_many_now.mp3" : "how_many_left.mp3");
+}
+function handleSpoken(value) {
+  if (!math || math.phase !== "asking") return;
+  if (value === null) { didntHear(); return; }
+  if (value === math.answer) {
+    stopAudio();
+    finishReveal("Good job!", ["num_" + math.answer + ".mp3", "praise_good_job.mp3"], 48);
+  } else {
+    showMe(); // Amanda's rule: a wrong answer jumps straight to Show Me
+  }
+}
+function tryIt() {
+  if (!SR || !math || math.phase !== "asking" || busy || listening) return;
+  stopAudio();
+  promptEl.textContent = "Say your answer!";
+  play("try_say.mp3", () => {
+    if (!math || math.phase !== "asking") return;
+    let settled = false;
+    try { rec = new SR(); } catch(e) { didntHear(); return; }
+    rec.lang = "en-US";
+    rec.interimResults = false;
+    rec.continuous = false;
+    rec.maxAlternatives = 5;
+    listening = true;
+    tryBtn.disabled = true;
+    tryBtn.classList.add("listening");
+    tryBtn.innerHTML = "👂 Listening…";
+    promptEl.textContent = "I'm listening… say your answer!";
+    rec.onresult = e => {
+      if (settled) return; settled = true;
+      const v = numberFromResults(e.results);
+      stopListening();
+      handleSpoken(v);
+    };
+    rec.onerror = e => {
+      if (settled) return; settled = true;
+      stopListening();
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+        promptEl.textContent = "The microphone is off — Show me still works!";
+      } else { didntHear(); }
+    };
+    rec.onend = () => {
+      if (settled) return; settled = true;
+      stopListening();
+      didntHear();
+    };
+    try { rec.start(); } catch(e) { settled = true; stopListening(); didntHear(); }
+  });
+}
+
 // ---------------- shared wiring ----------------
 function setMode(next) {
   if (next === mode) return;
+  stopListening();
   mode = next;
   document.getElementById("modeCountBtn").classList.toggle("on", mode === "count");
   document.getElementById("modeMathBtn").classList.toggle("on", mode === "math");
@@ -428,6 +537,7 @@ countBtn.addEventListener("click", () => {
 againBtn.addEventListener("click", resetCount);
 newProbBtn.addEventListener("click", newProblem);
 showMeBtn.addEventListener("click", showMe);
+tryBtn.addEventListener("click", tryIt);
 document.getElementById("modeCountBtn").addEventListener("click", () => setMode("count"));
 document.getElementById("modeMathBtn").addEventListener("click", () => setMode("math"));
 document.getElementById("buddy").addEventListener("click", () =>
